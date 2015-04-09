@@ -15,7 +15,7 @@ argparser.add_argument("-m", "--max_non_sequential_pattern_size", type=int, defa
 args = argparser.parse_args()
 
 # languages = ['de', 'en', 'es', 'fi', 'fr', 'ga', 'hu', 'it', 'sv']
-languages = ['en']
+languages = ['en', 'fr']
 
 def print_ind(node, ind):
   s1 = ""
@@ -25,7 +25,6 @@ def print_ind(node, ind):
   for c in node.children:
     s1 += print_ind(c, ind+1)
   return s1
-
 
 class TreeNode:
   def __init__(self):
@@ -78,6 +77,14 @@ def read_conll_treebank(filename):
    f.close()
    return corpus
 
+def read_conll_treebanks():
+  treebanks = {}
+  for language in languages:
+    treebank_filename = '{}/{}/{}-ud-train.conllu'.format(args.treebank_root_dir, language, language)
+    treebanks[language] = read_conll_treebank(treebank_filename)
+  return treebanks
+
+# insitu conversion.
 def convert_absolute_positions_to_relative(root_node):
   # pattern is the root node of the pattern
   stack = [root_node]
@@ -105,11 +112,6 @@ def convert_absolute_positions_to_relative(root_node):
     #print current_node.position, ind_dict[current_node.position]
     if len(current_node.children) != 0:
       stack.extend(current_node.children)
-  print root_node
-
-
-
-
 
 def extend_pattern_up(small_pattern, parent_original_node, position_to_tree_node):
   copy_parent = TreeNode()
@@ -140,10 +142,6 @@ def extend_pattern_down(small_pattern, child_original_node, position_to_tree_nod
       childs_parent = current_node
       break
     stack.extend(current_node.children)
-  print "copy of small pattern is\n{}".format(copy_of_small_pattern)
-  print "origianl small pattern is\n{}".format(small_pattern)
-  print "child_original_node is \n{}".format(child_original_node) 
-  # exit(1)
   assert(childs_parent != None)
 
   # create the child and attach it to its parent
@@ -175,21 +173,14 @@ def extract_patterns_from_sent(conll_lines, all_patterns, language, sent_id):
 
   # then read the conll lines and attach parents with children
   for line in conll_lines:
-    # print "**" + "+".join(line)
     position = int(line[0])
     parent_position = int(line[6])
     node = position_to_tree_node[position]
     node.parent = position_to_tree_node[parent_position]
     node.relation = line[7]
     node.pos = line[3]
-    # print "now adding child at position " + str(position) + " to parent at position " + str(parent_position)
-    # print "child is " + str(position_to_tree_node[position]) 
-    # print "parent was " + str(position_to_tree_node[parent_position])
     position_to_tree_node[parent_position].children.append(node)
-    # print "parent now is " + str(position_to_tree_node[parent_position])
-
-  # print position_to_tree_node[0]
-  # exit(1)
+    
   # ok, now we have the parse tree. then, extract patterns from it.
   size_to_patterns = []
   size_to_patterns.append(None)
@@ -213,15 +204,11 @@ def extract_patterns_from_sent(conll_lines, all_patterns, language, sent_id):
       # disclaimer: when the root of the small pattern is the ROOT symbol (i.e., position = 0), its parent will be None 
       parent_original_node = position_to_tree_node[small_pattern.position].parent
       # extend the small pattern up
-      # print parent_original_node
-
+      
       if parent_original_node != None:
-        # print "the small pattern is :\n" + str(small_pattern)
         things_to_add = extend_pattern_up(small_pattern, parent_original_node, position_to_tree_node)
-        # print "the things_to_add is :\n" + str(things_to_add)
         size_to_patterns[k].add(things_to_add)
-        # exit(1)
-
+        
       # find children positions of this pattern
       pattern_direct_children_positions = set()
       pattern_node_positions = set()
@@ -242,44 +229,153 @@ def extract_patterns_from_sent(conll_lines, all_patterns, language, sent_id):
 
   # replace absolute positions with relative positions then add the patterns to all_patterns  
   for k in xrange(1,len(size_to_patterns)):
-    print k
-    print size_to_patterns[k]
     for pattern in size_to_patterns[k]:
       convert_absolute_positions_to_relative(pattern)
       if pattern not in all_patterns: all_patterns[pattern] = {}
       if language not in all_patterns[pattern]: all_patterns[pattern][language] = []
       all_patterns[pattern][language].append(sent_id)
 
-def extract_all_patterns():
+def extract_all_patterns(treebanks):
   # initialize the main data structure that holds all patterns
   all_patterns = {}
-  for language in languages:
-    treebank_filename = '{}/{}/{}-ud-train.conllu'.format(args.treebank_root_dir, language, language)
-    treebank = read_conll_treebank(treebank_filename)
+  for language in treebanks.keys():
+    treebank = treebanks[language]
     x = 0
     for sent_id in xrange(len(treebank)):
       sent = treebank[sent_id]
-      print_sentence(sent, sys.stdout)
+      #print_sentence(sent, sys.stdout)
       extract_patterns_from_sent(sent, all_patterns, language, sent_id)
+
+      # test only a few sentences to see if it is correct
       x += 1
-      if x > 2:
-      # test one sentence to see if it is correct
+      if x > 10:
         break
+  return all_patterns
+
+def print_all_patterns(treebanks, all_patterns):
+  print 'extracted patterns are:'
   for pattern in all_patterns:
     print pattern
+    print 'instantiated in', len(all_patterns[pattern]), 'languages.'
+    for lang in all_patterns[pattern].keys():
+      print '  instantiations in "{}":'.format(lang)
+      for sent_id in all_patterns[pattern][lang]:
+        print '    sent_id:', sent_id
+        #sentence = treebanks[lang][sent_id]
+        #print_sentence(sentence, sys.stdout)
+
+  return all_patterns
 
 def print_sentence(sentence, outputf):
-    for line in sentence:
-        s = u""
-        for field in line:
-            s += field + u"\t"
-        s = s.strip()
-        outputf.write(s+u"\n")
-    outputf.write(u"\n")
-    return
+  for line in sentence:
+    s = u""
+    for field in line:
+      s += field + u"\t"
+    s = s.strip()
+    outputf.write(s+u"\n")
+  outputf.write(u"\n")
+  return
+
+def parse_gfl_query(query):
+  query_parts = query.split()
+
+  # create isolated tree nodes and set their 
+  # absolute position and part-of-speech properties 
+  token_nodes = []
+  part_index_to_node = []
+  for part_index in xrange(len(query_parts)):
+    if query_parts[part_index][0] not in ['<', '>']:
+      token_nodes.append(TreeNode())
+      token_nodes[-1].position = len(token_nodes)
+      token_nodes[-1].pos = query_parts[part_index]
+      part_index_to_node.append(token_nodes[-1])
+    else:
+      part_index_to_node.append(None)
+  
+  # process each arc
+  for part_index in xrange(len(query_parts)):
+    if query_parts[part_index][0] in ['<', '>']:
+      # bad query
+      if part_index == 0 or part_index == len(query_parts)-1 or \
+            part_index_to_node[part_index-1] == None or \
+            part_index_to_node[part_index+1] == None:
+        print 'This part "{}" of the GFL++ query must appear between two parts of speech.'.format(query_parts[part_index])
+        return None
+
+      # extract information on this arc
+      child_part_index = part_index-1 if query_parts[part_index][0] == '>' else part_index+1
+      parent_part_index = part_index+1 if query_parts[part_index][0] == '>' else part_index-1
+      relation = query_parts[part_index][1:]
+
+      # link nodes based on this arc
+      part_index_to_node[child_part_index].relation = relation
+      part_index_to_node[child_part_index].parent = part_index_to_node[parent_part_index]
+      part_index_to_node[parent_part_index].children.append(part_index_to_node[child_part_index])
+
+  # debug
+  print 'token_nodes:'
+  for node in token_nodes:
+    print 'position = {}, parent_position = {}, pos = {}, len(children) = {}, relation = {}'.format(node.position, node.parent.position if node.parent else 'nothing', node.pos, len(node.children), node.relation) 
+  print
+
+  # if the gfl query is valid, all nodes should have a parent,
+  # except for the query root which should have parent = None
+  root_node = None
+  for node in token_nodes:
+    # bad query
+    if node.parent == None and root_node != None:
+      print 'GFL++ query contains multiple roots!'
+      return None
+    # set root when you find it
+    if node.parent == None and root_node == None:
+      root_node = node
+      # the root should have children
+      if len(token_nodes) > 1 and len(root_node.children) == 0:
+        print 'root node has no children!'
+        return None
+
+  # bad query
+  if root_node == None:
+    print 'GFL++ query has no root!'
+    return None
+
+  # convert absolute positions to relative positions
+  convert_absolute_positions_to_relative(root_node)
+
+  # return the root node of the query
+  return root_node
 
 if __name__ == '__main__':
   sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
   sys.stderr = codecs.getwriter('utf-8')(sys.stderr)
 
-  extract_all_patterns()
+  print 'Reading the treebanks...'
+  treebanks = read_conll_treebanks()
+  print 'Extracting patterns...'
+  all_patterns = extract_all_patterns(treebanks)
+
+  # debug
+  print 'Extracted patterns are:'
+  print_all_patterns(treebanks, all_patterns)
+
+  while True:
+    print             '======================================================================================'
+    query = raw_input('Type a GFL++ query (e.g., NOUN >nsubj VERB <dobj NOUN), or hit the return key to exit:')
+    if len(query) == 0:
+      print 'Thanks for using the universal dependencies analyzer! Good bye!'
+      break
+    query_pattern = parse_gfl_query(query)
+    if query_pattern == None:
+      print 'ERROR: invalid GFL++ query. Please try again.'
+    else:
+      print 'the specified syntactic pattern is', query_pattern
+      print 'pattern found in', len(all_patterns[query_pattern]), 'languages.'
+      for language in all_patterns[query_pattern].keys():
+        print '\nlanguage:', language
+        for sent_id in set(all_patterns[query_pattern][language]):
+          more = raw_input('\n Type "show" (or anything else) if you want to see (more) example sentences in this language (i.e., {}), or hit the return key to move on:'.format(language))
+          if len(more) == 0:
+            break
+          sent = treebanks[language][sent_id]
+          print 'example sentence:'
+          print_sentence(sent, sys.stdout)
