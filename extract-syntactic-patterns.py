@@ -12,10 +12,11 @@ argparser = argparse.ArgumentParser()
 argparser.add_argument("-i", "--treebank_root_dir", required=True)
 argparser.add_argument("-o", "--output_filename", required=True)
 argparser.add_argument("-m", "--max_non_sequential_pattern_size", type=int, default=4)
+argparser.add_argument("-e", "--offer-examples", action='store_true', default=False)
 args = argparser.parse_args()
 
-# languages = ['de', 'en', 'es', 'fi', 'fr', 'ga', 'hu', 'it', 'sv']
-languages = ['en', 'fr']
+languages = ['cs', 'de', 'en', 'es', 'fi', 'fr', 'ga', 'hu', 'it', 'sv']
+#languages = ['en', 'fr']
 
 def print_ind(node, ind):
   s1 = ""
@@ -94,6 +95,7 @@ def convert_absolute_positions_to_relative(root_node):
     current_node = stack.pop()
     abs_positions.append(current_node.position)
     if len(current_node.children) != 0:
+      current_node.children.sort(key=lambda x: x.position)
       stack.extend(current_node.children)
 
   abs_positions.sort()
@@ -240,11 +242,17 @@ def extract_all_patterns(treebanks):
   all_patterns = {}
   for language in treebanks.keys():
     treebank = treebanks[language]
+    sents_count = 0
 
     for sent_id in xrange(len(treebank)):
       sent = treebank[sent_id]
       #print_sentence(sent, sys.stdout)
       extract_patterns_from_sent(sent, all_patterns, language, sent_id)
+
+      # test only a few sentences to see if it is correct
+      sents_count += 1
+      if sents_count > 1000:
+        break
 
   return all_patterns
 
@@ -273,20 +281,44 @@ def print_sentence(sentence, outputf):
   return
 
 not_nested_brackets = re.compile('\([^()]+\)')
-def parser_gfl_query(query):
+def parse_gfl_query(query):
+  print 'query was: ' + query
+  query = query.replace('(', ' ( ')
+  query = query.replace(')', ' ) ')
   treelets = {}
+
+  # replace each token with a treelet index
+  query_parts = query.split()
+  # create isolated tree nodes and set their 
+  # absolute position and part-of-speech properties 
+  part_index_to_node = []
+  tokens_counter = 0
+  for part_index in xrange(len(query_parts)):
+    if query_parts[part_index][0] not in ['<', '>', '(', ')']:
+      treelet = TreeNode()
+      treelet.position = tokens_counter
+      treelet.pos = query_parts[part_index]
+      treelets[tokens_counter] = treelet
+      new_token = '#' + str(tokens_counter)
+      query_parts[part_index] = new_token
+      tokens_counter += 1
+  query = ' '.join(query_parts)
+  print 'query after replacing origianal tokens with treelet indexes: ' + query
+
   while (True):
     match = not_nested_brackets.search(query)
-    if !match: break
+    if not match: break
     bracketless_span = query[match.start()+1:match.end()-1]
     treelet = parse_gfl_query_no_brackets(bracketless_span, treelets)
     treelet_index = len(treelets)
     treelets[treelet_index] = treelet
-    query = query[:match.start()] + ' #' + treelet_index + ' ' + query[match.end():]
+    query = query[:match.start()] + ' #' + str(treelet_index) + ' ' + query[match.end():]
+    print 'query now is: ' + query
 
   # after processing all brackets
   root_node = parse_gfl_query_no_brackets(query, treelets)
-
+  assert root_node != None
+ 
   # convert absolute positions to relative positions
   convert_absolute_positions_to_relative(root_node)
   return root_node
@@ -295,6 +327,7 @@ def parser_gfl_query(query):
 
 def parse_gfl_query_no_brackets(query, treelets):
   query_parts = query.split()
+  print 'query_parts are ' + ' '.join(query_parts)
 
   # create isolated tree nodes and set their 
   # absolute position and part-of-speech properties 
@@ -303,10 +336,6 @@ def parse_gfl_query_no_brackets(query, treelets):
   for part_index in xrange(len(query_parts)):
     if query_parts[part_index][0] == '#':
       token_nodes.append(treelets[int(query_parts[part_index][1:])])
-    else if query_parts[part_index][0] not in ['<', '>']:
-      token_nodes.append(TreeNode())
-      token_nodes[-1].position = len(token_nodes)
-      token_nodes[-1].pos = query_parts[part_index]
       part_index_to_node.append(token_nodes[-1])
     else:
       part_index_to_node.append(None)
@@ -385,9 +414,14 @@ if __name__ == '__main__':
       print 'ERROR: invalid GFL++ query. Please try again.'
     else:
       print 'the specified syntactic pattern is', query_pattern
-      print 'pattern found in', len(all_patterns[query_pattern]), 'languages.'
-      for language in all_patterns[query_pattern].keys():
-        print '\nlanguage and number of times the pattern happens in the language:', language, len(all_patterns[query_pattern][language])
+      print 'pattern found in', len(all_patterns[query_pattern]) if query_pattern in all_patterns else 0, 'languages.'
+      for language in languages:
+        if query_pattern in all_patterns and language in all_patterns[query_pattern].keys():
+          pattern_frequency = len(all_patterns[query_pattern][language]) 
+        else:
+          pattern_frequency = 0
+        print '{}\t{}'.format(language, pattern_frequency)
+        if pattern_frequency == 0 or not args.offer_examples: continue
         for sent_id in set(all_patterns[query_pattern][language]):
           more = raw_input('\n Type "show" (or anything else) if you want to see (more) example sentences in this language (i.e., {}), or hit the return key to move on:'.format(language))
           if len(more) == 0:
