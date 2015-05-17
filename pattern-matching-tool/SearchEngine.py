@@ -4,6 +4,9 @@ import time
 import sys
 import networkx as nx
 import matplotlib.pyplot as plt
+import shutil
+import os
+
 
 UNIVERSAL_POS = {"adv", "noun", "num", "adp", "pron", "sconj", "propn", "det", "sym", "intj", "part", "punct", "verb", "x", "aux", "conj", "adj"}
 UNIVERSAL_DEP = {"foreign", "cc", "list", "nmod:tmod", "ccomp", "remnant", "nsubjpass", "csubj", "conj", "amod", "vocative", "discourse", "neg", "csubjpass", "mark", "auxpass", "mwe", "advcl", "dislocated", "aux", "det:predet", "parataxis", "xcomp", "nsubj", "nmod:npmod", "nummod", "advmod", "punct", "compound", "compound:prt", "nmod:poss", "goeswith", "case", "cop", "conj:preconj", "dep", "appos", "det", "nmod", "dobj", "acl:relcl", "iobj", "expl", "reparandum", "acl"}
@@ -275,7 +278,6 @@ def draw_match (match_id, tree_id, matching_nodes, tree_nodes, tree_nodes_labels
     # print "Matchings:"+",".join(str(item) for item in matching_nodes)+"\n"
     # print "========="
 
-
     G = nx.DiGraph()
     edge_labels_dict = {}
     node_labels_dict = {}
@@ -323,83 +325,94 @@ def main():
     print("Size of Index in Memory %f MB"%((sys.getsizeof(POS_DICT)+sys.getsizeof(WORD_DICT)+sys.getsizeof(RELATIONS))/(1000*1000*1.0)))
     print "\n"
 
-    # Query
-    query = "I >> I"
+    while True:
+        print '======================================================================================'
+        query = raw_input('Type a GFL++ query (e.g., NOUN >nsubj VERB <dobj NOUN), or hit the return key to exit:')
+        if len(query) == 0:
+            print 'Thanks for using the universal dependencies analyzer! Good bye!'
+            break
 
-    # Phase #2: Parse Query => Postfix Expression
-    query = query.lower()
-    unique_operands = set()
-    postfix_query = []
-    operations_stack = []
-    for query_token in query.split():
-        if is_operation(query_token):  # operation
-            curr_operation = DependencyOperation(query_token)
-            while len(operations_stack) != 0 and precedence_check(operations_stack[-1].operator, curr_operation.operator):
-                postfix_query.append(operations_stack.pop())
-            operations_stack.append(curr_operation)
-        else:  # operand
-            postfix_query.append(query_token)
-            unique_operands.add(query_token)
-    while len(operations_stack) != 0:
-        postfix_query.append(operations_stack.pop())
+        # Phase #2: Parse Query => Postfix Expression
+        query = query.lower()
+        unique_operands = set()
+        postfix_query = []
+        operations_stack = []
+        for query_token in query.split():
+            if is_operation(query_token):  # operation
+                curr_operation = DependencyOperation(query_token)
+                while len(operations_stack) != 0 and precedence_check(operations_stack[-1].operator, curr_operation.operator):
+                    postfix_query.append(operations_stack.pop())
+                operations_stack.append(curr_operation)
+            else:  # operand
+                postfix_query.append(query_token)
+                unique_operands.add(query_token)
+        while len(operations_stack) != 0:
+            postfix_query.append(operations_stack.pop())
 
-    print "Phase #2: Parsing Query"
-    print "Infix Query: "+query
-    print "Postfix query: " + ", ".join(str(item) for item in postfix_query)
-    print "Unique operands: " + ", ".join(unique_operands)
-    print "\n"
+        # print "Phase #2: Parsing Query"
+        print "Infix Query: "+query
+        print "Postfix query: " + ", ".join(str(item) for item in postfix_query)
+        # print "Unique operands: " + ", ".join(unique_operands)
+        # print "\n"
 
-    # Phase #3: Find trees which contain all operands
-    start = int(round(time.time() * 1000))
-    common_trees = []
-    for tree_id in range(0, MAX_TREE_ID+1):
-        is_common_tree = True
-        for operand in unique_operands:
-            if (is_pos(operand) and tree_id in POS_DICT[operand]) or (not is_pos(operand) and tree_id in WORD_DICT[operand]):
-                continue
-            is_common_tree = False
-        if is_common_tree:
-            common_trees.append(tree_id)
-    end = int(round(time.time() * 1000))
+        # Phase #3: Find trees which contain all operands
+        start = int(round(time.time() * 1000))
+        common_trees = []
+        for tree_id in range(0, MAX_TREE_ID+1):
+            is_common_tree = True
+            for operand in unique_operands:
+                if (is_pos(operand) and tree_id in POS_DICT[operand]) or (not is_pos(operand) and tree_id in WORD_DICT[operand]):
+                    continue
+                is_common_tree = False
+            if is_common_tree:
+                common_trees.append(tree_id)
+        end = int(round(time.time() * 1000))
 
-    print "Phase #3: Finding Common Trees"
-    print "Number of common trees = %d" % len(common_trees)
-    print("Time taken %f ms" % (end-start))
-    print "\n"
+        # For Debugging
+        # print "Phase #3: Finding Common Trees"
+        # print "Number of common trees = %d" % len(common_trees)
+        # print("Time taken %f ms" % (end-start))
+        # print "\n"
 
-    # Phase #4: Evaluate the query for each common tree
-    start = int(round(time.time() * 1000))
-    matches = []
-    for tree_id in common_trees:
-        operands_stack = []
-        for query_token in postfix_query:
-            if type(query_token) is str:  # therefore query_token is operand, so push it to the stack
-                if is_pos(operand):
-                    operands_stack.append(ConvertToOutputFormat(POS_DICT[query_token][tree_id]))
-                else:
-                    operands_stack.append(ConvertToOutputFormat(WORD_DICT[query_token][tree_id]))
-            else:  # therefore query_toke is operation, so pop top 2 operands in the stack
-                merge_output_list = merge_lists(operands_stack.pop(), operands_stack.pop(), query_token)
-                operands_stack.append(merge_output_list)
-        # operands_stack should now contain list of results
-        if not len(operands_stack) == 1:
-            raise ValueError("Something went wrong")
-        matches.extend(operands_stack.pop())
-    end = int(round(time.time() * 1000))
+        # Phase #4: Evaluate the query for each common tree
+        start = int(round(time.time() * 1000))
+        matches = []
+        for tree_id in common_trees:
+            operands_stack = []
+            for query_token in postfix_query:
+                if type(query_token) is str:  # therefore query_token is operand, so push it to the stack
+                    if is_pos(operand):
+                        operands_stack.append(ConvertToOutputFormat(POS_DICT[query_token][tree_id]))
+                    else:
+                        operands_stack.append(ConvertToOutputFormat(WORD_DICT[query_token][tree_id]))
+                else:  # therefore query_toke is operation, so pop top 2 operands in the stack
+                    merge_output_list = merge_lists(operands_stack.pop(), operands_stack.pop(), query_token)
+                    operands_stack.append(merge_output_list)
+            # operands_stack should now contain list of results
+            if not len(operands_stack) == 1:
+                raise ValueError("Something went wrong")
+            matches.extend(operands_stack.pop())
+        end = int(round(time.time() * 1000))
 
-    print "Phase #4: Finding Matches"
-    print "Number of matches = %d" % len(matches)
-    print("Time taken %f ms" % (end-start))
-    print "\n"
+        # print "Phase #4: Finding Matches"
+        print ("%d matches found in %f ms"%(len(matches),(end-start)))
+        # print "\n"
+        print "Drawing first 10 results in Output folder..."
 
-    # Phase 5: Drawing first 10 matches
-    for match_id in range(0,10):
-        if match_id < len(matches):
-            match = matches[match_id]
-            tree_id = match.head.treeID
-            matching_nodes = match.history_list[:]
-            matching_nodes.append(match.head.start)
-            draw_match (match_id, tree_id, matching_nodes, TREE_NODES[tree_id], TREE_NODES_LABELS[tree_id], TREE_EDGES[tree_id], TREE_EDGES_LABELS[tree_id], SENTENCES[tree_id])
+        # Phase 5: Drawing first 10 matches
+
+        dir = 'Output'
+        if os.path.exists(dir):
+            shutil.rmtree(dir)  # cleaning output folder
+        os.makedirs(dir)
+
+        for match_id in range(0,10):
+            if match_id < len(matches):
+                match = matches[match_id]
+                tree_id = match.head.treeID
+                matching_nodes = match.history_list[:]
+                matching_nodes.append(match.head.start)
+                draw_match (match_id, tree_id, matching_nodes, TREE_NODES[tree_id], TREE_NODES_LABELS[tree_id], TREE_EDGES[tree_id], TREE_EDGES_LABELS[tree_id], SENTENCES[tree_id])
 
 # Run Main
 main()
