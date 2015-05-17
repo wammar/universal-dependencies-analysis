@@ -1,1 +1,6 @@
-Index/
+pattern-matching-tool/Index/
+.idea/
+pattern-matching-tool/test.py
+pattern-matching-tool/Output
+pattern-matching-tool/*.png
+pattern-matching-tool/*.dot
