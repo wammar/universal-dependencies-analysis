@@ -381,7 +381,7 @@ def main():
             operands_stack = []
             for query_token in postfix_query:
                 if type(query_token) is str:  # therefore query_token is operand, so push it to the stack
-                    if is_pos(operand):
+                    if is_pos(query_token):
                         operands_stack.append(ConvertToOutputFormat(POS_DICT[query_token][tree_id]))
                     else:
                         operands_stack.append(ConvertToOutputFormat(WORD_DICT[query_token][tree_id]))
