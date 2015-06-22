@@ -1,0 +1,165 @@
+{% load staticfiles %}
+<html>
+  <head>
+    <link href="{% static 'bootstrap/css/bootstrap.min.css' %}" rel="stylesheet" media="screen">
+    <style>
+        .node circle {
+        fill: #fff;
+        stroke: steelblue;
+        stroke-width: 3px;
+        }
+
+        .node text { font: 12px sans-serif; }
+
+        .link {
+        fill: none;
+        stroke: #ccc;
+        stroke-width: 2px;
+        }
+
+        .mysearchbar{
+            <!--background-color:red;-->
+            padding: 20px 20px 0px 20px;
+        }
+
+        .mydropdown{
+            <!--background-color:green;-->
+            padding: 20px 0px 0px 0px;
+        }
+
+        .myresponseinfo{
+            <!--background-color:blue;-->
+            padding: 5px 0px 0px 20px;
+            height: 20px
+        }
+
+        .temp {
+            <!--background-color:yellow;-->
+        }
+
+        .myarrows {
+            text-align:center;
+        }
+    </style>
+  </head>
+
+  <body>
+    <script src="{% static 'jquery/jquery-1.11.3.js' %}"></script>
+    <script src="{% static 'bootstrap/js/bootstrap.min.js' %}"></script>
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+    <script src="{% static 'myjs/myjs.js' %}"></script>
+    <script>
+        $(document).ready(function() {
+           $("#myform").submit(function(event){
+                event.preventDefault();
+                $.ajax({
+                 type:"POST",
+                 url:"/search/",
+                 data: { 'query': $('#searchTxt').val(), 'lang': $(".btn.dropdown-toggle:first-child").text(), csrfmiddlewaretoken: '{{ csrf_token }}' },
+                 success: function(response){
+                    showResponseInfo(response["size"], response["time"])
+                    showResultsNavigation()
+                    if(response["size"] > 0){
+                        draw_flat_data(response["firstresult"])
+                    }else{
+                        d3.select("svg").remove();
+                    }
+                    $('#myresultcounter').text(response["currentresult"])
+                    $('#maxresultcounter').text(" / "+response["samplesize"])
+                    // alert(JSON.stringify(json[0]))
+                 },
+                 error: function(errormessage){
+                    d3.select("svg").remove();
+                    showResponseError();
+                 }
+            });
+           });
+
+           $("#leftarrow").click(function(event){
+                event.preventDefault();
+                $.ajax({
+                 type:"POST",
+                 url:"/getpreviousresult/",
+                 data: {  csrfmiddlewaretoken: '{{ csrf_token }}' },
+                 success: function(response){
+                        if(response["currentresult"] > 0){
+                            draw_flat_data(response["tree"]);
+                            $('#myresultcounter').text(response["currentresult"])
+                        }
+                 }
+            });
+           });
+
+           $("#rightarrow").click(function(event){
+                event.preventDefault();
+                $.ajax({
+                 type:"POST",
+                 url:"/getnextresult/",
+                 data: {  csrfmiddlewaretoken: '{{ csrf_token }}' },
+                 success: function(response){
+                        if(response["currentresult"] > 0){
+                            draw_flat_data(response["tree"])
+                            $('#myresultcounter').text(response["currentresult"])
+                        }
+                 }
+            });
+           });
+
+           $(".dropdown-menu li a").click(function(){
+              $(".btn.dropdown-toggle:first-child").text($(this).text()+" ");
+              $(".btn.dropdown-toggle:first-child").val($(this).text()+" ");
+              $("#dropdownMenu1").append("<span class=\"caret\"></span>");
+           });
+
+
+        });
+    </script>
+
+    <form class= "" id="myform" action="/search/" method="post">
+        {% csrf_token %}
+        <div class="col-md-6 mysearchbar">
+            <div class="input-group">
+              <input id="searchTxt" type="text" class="form-control" name="query" placeholder='enter your query here ...' >
+              <span class="input-group-btn">
+                <button class="btn btn-default" type="submit">Search</button>
+              </span>
+            </div><!-- /input-group -->
+        </div><!-- /.col-lg-6 -->
+        <div class="dropdown col-md-6 mydropdown">
+          <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenu1" data-toggle="dropdown" aria-expanded="true">
+            English
+            <span class="caret"></span>
+          </button>
+          <ul class="dropdown-menu" role="menu" aria-labelledby="dropdownMenu1">
+            <li role="presentation"><a role="menuitem" tabindex="0" href="#">English</a></li>
+            <li role="presentation"><a role="menuitem" tabindex="1" href="#">French</a></li>
+            <li role="presentation"><a role="menuitem" tabindex="2" href="#">Spanish</a></li>
+            <li role="presentation"><a role="menuitem" tabindex="3" href="#">German</a></li>
+          </ul>
+        </div>
+    </form>
+    <!--<div class="clearfix"></div>-->
+
+    <div>
+        <div class="col-md-6 myresponseinfo">
+            <p class="" id="response_info"><p>
+        </div>
+        <div class="col-md-6 myresponseinfo"> <p class=""><p></div>
+    </div>
+
+
+    <!--<div class="clearfix"></div>-->
+    <div>
+        <div class="col-md-4" ></div>
+        <div class="hide col-md-4 myarrows" id="results_navigation" >
+            <span id="leftarrow" class="glyphicon glyphicon-chevron-left"  aria-hidden="true"></span>
+            <span id="myresultcounter"></span>
+            <span id="maxresultcounter"></span>
+            <span id="rightarrow" class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
+        </div>
+        <div class="col-md-4"></div>
+    </div>
+
+
+  </body>
+</html>

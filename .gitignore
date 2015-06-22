@@ -1,4 +1,5 @@
 pattern-matching-tool/Index/
+pattern-matching-tool/treebanks/
 .idea/
 pattern-matching-tool/test.py
 pattern-matching-tool/Output

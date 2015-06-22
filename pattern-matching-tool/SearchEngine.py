@@ -236,28 +236,17 @@ def merge_lists(first_list, second_list, operation):
             merge_stack.append(MergeCandidate(a_position, a_history))
             ancestor_list_ptr += 1
         else:
-            if is_parent_child_operation(operation.operator):  # test against top of the stack only
-                if not len(merge_stack) == 0:
-                    stack_element = merge_stack[-1]
-                    if check_parent_child_relation(stack_element.position, d_position, operation):
-                        merge_history_list = list(stack_element.history_list)
-                        merge_history_list.extend(d_history)
-                        merge_history_list.append(d_position.start)
-                        if len(merge_stack) == 1:
-                            merge_output_list.append(MergeOutput(stack_element.position, merge_history_list))
-                        else:
-                            stack_element.self_list.append(MergeOutput(stack_element.position, merge_history_list))
-
-            else:  # ancestor decendant operation, test against all of the stack
-                for stack_itr in range(0, len(merge_stack)):
-                    stack_element = merge_stack[stack_itr]
-                    merge_history_list = list(stack_element.history_list)
-                    merge_history_list.extend(d_history)
-                    merge_history_list.append(d_position.start)
-                    if stack_itr == 0:  # bottom of the stack
-                        merge_output_list.append(MergeOutput(stack_element.position, merge_history_list))
-                    else:
-                        stack_element.self_list.append(MergeOutput(stack_element.position, merge_history_list))
+            for stack_itr in range(0, len(merge_stack)):
+                stack_element = merge_stack[stack_itr]
+                if is_parent_child_operation(operation.operator) and not check_parent_child_relation(stack_element.position, d_position, operation):
+                    continue
+                merge_history_list = list(stack_element.history_list)
+                merge_history_list.extend(d_history)
+                merge_history_list.append(d_position.start)
+                if stack_itr == 0:  # bottom of the stack
+                    merge_output_list.append(MergeOutput(stack_element.position, merge_history_list))
+                else:
+                    stack_element.self_list.append(MergeOutput(stack_element.position, merge_history_list))
             descendant_list_ptr += 1
     return merge_output_list
 
@@ -306,8 +295,36 @@ def draw_match (match_id, tree_id, matching_nodes, tree_nodes, tree_nodes_labels
     plt.savefig('Output/'+str(match_id)+'.png')
     plt.clf()
 
+def remove_duplicates(merge_output_list):
+    unique_merge_output_list = []
+    unique_results = []  # list of sets
+    for merge_output in merge_output_list:
+        # create a set
+        curr_set = set(merge_output.history_list)
+        curr_set.add(merge_output.head.start)
+
+        # check if one item is a duplicate of another in the same set
+        if not len(curr_set) == len(merge_output.history_list) + 1:
+            continue
+
+        # check if duplicate with previous set
+        is_duplicate = False
+        for unique_result in unique_results:
+            if curr_set == unique_result:
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            unique_results.append(curr_set)
+            unique_merge_output_list.append(merge_output)
+
+    return unique_merge_output_list
+
+
+POS_DICT = WORD_DICT = RELATIONS = TREE_NODES = TREE_NODES_LABELS =  TREE_EDGES = TREE_EDGES_LABELS = SENTENCES = SENTENCES_POS ={}
 
 def main():
+    global POS_DICT, WORD_DICT, RELATIONS, TREE_NODES, TREE_NODES_LABELS, TREE_EDGES, TREE_EDGES_LABELS, SENTENCES, SENTENCES_POS
 
     # Phase #1: Loading Index
     start = int(round(time.time() * 1000))
@@ -370,9 +387,9 @@ def main():
 
         # For Debugging
         # print "Phase #3: Finding Common Trees"
-        # print "Number of common trees = %d" % len(common_trees)
-        # print("Time taken %f ms" % (end-start))
-        # print "\n"
+        print "Number of common trees = %d" % len(common_trees)
+        print("Time taken %f ms" % (end-start))
+        print "\n"
 
         # Phase #4: Evaluate the query for each common tree
         start = int(round(time.time() * 1000))
@@ -391,7 +408,7 @@ def main():
             # operands_stack should now contain list of results
             if not len(operands_stack) == 1:
                 raise ValueError("Something went wrong")
-            matches.extend(operands_stack.pop())
+            matches.extend(remove_duplicates(operands_stack.pop()))
         end = int(round(time.time() * 1000))
 
         # print "Phase #4: Finding Matches"
@@ -413,6 +430,7 @@ def main():
                 matching_nodes = match.history_list[:]
                 matching_nodes.append(match.head.start)
                 draw_match (match_id, tree_id, matching_nodes, TREE_NODES[tree_id], TREE_NODES_LABELS[tree_id], TREE_EDGES[tree_id], TREE_EDGES_LABELS[tree_id], SENTENCES[tree_id])
+
 
 # Run Main
 main()
